@@ -66,16 +66,26 @@ docker-compose up -d
 
 ```
 Push → 변경 감지 → Maven 빌드 → Docker Build → ECR Push → GitOps 업데이트
-                                                                    ↓
-                                                          ArgoCD 자동 배포
+                ↓                                              ↓
+        변경된 서비스만 감지                            yq로 정확한 태그 수정
+                                                                ↓
+                                                      ArgoCD 자동 배포
 ```
 
 ### 파이프라인 흐름
 
-1. **변경 감지** - 수정된 서비스만 빌드
+1. **변경 감지** - 수정된 서비스만 빌드 (git diff 기반)
 2. **Maven 빌드** - Java 17, 테스트 스킵
-3. **Docker Build & ECR Push** - 레이어드 이미지
-4. **GitOps 업데이트** - kustomization.yaml 태그 수정
+3. **Docker Build & ECR Push** - 레이어드 이미지, 변경된 서비스만
+4. **GitOps 업데이트** - `yq`로 kustomization.yaml 정확한 태그 수정
+
+### 선택적 배포
+
+| 변경 파일 | 빌드 대상 |
+|----------|----------|
+| `spring-petclinic-api-gateway/*` | api-gateway만 |
+| `spring-petclinic-customers-service/*` | customers-service만 |
+| `pom.xml` 또는 `.github/workflows/*` | 전체 서비스 |
 
 ### GitHub Secrets 설정
 
@@ -94,5 +104,6 @@ Push → 변경 감지 → Maven 빌드 → Docker Build → ECR Push → GitOps
 | Container | Docker |
 | Database | MySQL (RDS) |
 | CI/CD | GitHub Actions |
-| GitOps | ArgoCD |
+| GitOps | ArgoCD + Kustomize |
+| YAML 처리 | yq (정확한 이미지 태그 수정) |
 | AWS 인증 | OIDC (키 없음) |
