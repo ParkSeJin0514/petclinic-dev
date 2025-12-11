@@ -240,6 +240,9 @@ jobs:
           token: ${{ secrets.GITOPS_TOKEN }}
           path: gitops
 
+      - name: Setup yq
+        uses: mikefarah/yq@v4
+
       - name: Update Image Tags
         env:
           IMAGE_TAG: ${{ needs.docker-push.outputs.image-tag }}
@@ -257,13 +260,16 @@ jobs:
           cat kustomization.yaml
           echo "================================="
           
+          # yq를 사용한 정확한 이미지 태그 업데이트
           update_tag() {
             local service=$1
             local build_flag=$2
             
             if [ "$build_flag" = "true" ]; then
               echo "🔄 Updating $service tag to $IMAGE_TAG"
-              sed -i "/petclinic-$service/,/newTag:/s/newTag: .*/newTag: \"$IMAGE_TAG\"/" kustomization.yaml
+              yq -i "(.images[] | select(.name == \"springcommunity/spring-petclinic-$service\").newTag) = \"$IMAGE_TAG\"" kustomization.yaml
+            else
+              echo "⏭️ Skipping $service (변경 없음)"
             fi
           }
           
@@ -280,6 +286,9 @@ jobs:
           echo "================================="
 
       - name: Commit & Push
+        env:
+          IMAGE_TAG: ${{ needs.docker-push.outputs.image-tag }}
+          BUILT_SERVICES: ${{ needs.docker-push.outputs.built-services }}
         run: |
           cd gitops
           git config user.email "github-actions@github.com"
@@ -289,7 +298,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
-            git commit -m "🚀 Update image tag to ${{ needs.docker-push.outputs.image-tag }} (Run #${{ github.run_number }})"
+            git commit -m "🚀 Update [$BUILT_SERVICES ] to tag $IMAGE_TAG"
             git push
             echo "✅ GitOps 업데이트 완료"
           fi
@@ -298,4 +307,5 @@ jobs:
         run: |
           echo "### 📝 GitOps 업데이트" >> $GITHUB_STEP_SUMMARY
           echo "- **Image Tag:** ${{ needs.docker-push.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Updated Services:** ${{ needs.docker-push.outputs.built-services }}" >> $GITHUB_STEP_SUMMARY
           echo "- **ArgoCD가 자동으로 EKS에 배포합니다**" >> $GITHUB_STEP_SUMMARY
