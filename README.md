@@ -1,6 +1,6 @@
 # 🐾 PetClinic Dev
 
-Spring PetClinic Microservices 소스 코드 및 CI/CD 파이프라인
+Spring PetClinic Microservices 소스 코드 및 Multi-Cloud CI/CD 파이프라인
 
 ## 🏛️ 아키텍처
 
@@ -42,7 +42,7 @@ Spring PetClinic Microservices 소스 코드 및 CI/CD 파이프라인
 
 ```
 ├── .github/workflows/
-│   └── petclinic-ci.yml  # GitHub Actions CI/CD 파이프라인
+│   └── petclinic-ci.yml      # Multi-Cloud CI/CD 파이프라인
 ├── spring-petclinic-*/       # 각 마이크로서비스 소스
 ├── docker/                   # Dockerfile들
 ├── scripts/                  # 빌드/배포 스크립트
@@ -63,7 +63,7 @@ docker-compose up -d
 ./mvnw spring-boot:run -pl spring-petclinic-config-server
 ```
 
-## ⚙️ CI/CD (GitHub Actions)
+## ☁️ Multi-Cloud CI/CD (GitHub Actions)
 
 `.github/workflows/petclinic-ci.yml` 파이프라인:
 
@@ -78,67 +78,87 @@ Push to main
 │ 2. Maven 빌드 (변경된 서비스만)                             │
 │    └── Java 17, 테스트 스킵                                 │
 ├─────────────────────────────────────────────────────────────┤
-│ 3. Docker Build & ECR Push                                 │
-│    ├── 레이어드 이미지 (캐싱 최적화)                        │
-│    └── 태그: Git SHA (abc123)                              │
+│ 3. Docker Build & Multi-Cloud Push                         │
+│    ├── AWS ECR Push (ap-northeast-2)                       │
+│    └── GCP Artifact Registry Push (asia-northeast3)        │
 ├─────────────────────────────────────────────────────────────┤
 │ 4. GitOps 업데이트                                          │
 │    ├── petclinic-gitops 클론                               │
-│    ├── yq로 kustomization.yaml 정확한 태그 수정            │
+│    ├── overlays/aws/kustomization.yaml 태그 수정           │
+│    ├── overlays/gcp/kustomization.yaml 태그 수정           │
 │    └── Commit & Push                                        │
 ├─────────────────────────────────────────────────────────────┤
 │ 5. ArgoCD 자동 배포                                         │
-│    └── petclinic-gitops 변경 감지 → EKS 배포               │
+│    ├── AWS EKS 배포 (Primary)                              │
+│    └── GCP GKE 배포 (DR)                                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### 선택적 빌드
+### 🐳 이미지 레지스트리
+
+| 클라우드 | 레지스트리 | 리전 |
+|---------|-----------|------|
+| **AWS** | ECR | ap-northeast-2 |
+| **GCP** | Artifact Registry | asia-northeast3 |
+
+```bash
+# AWS ECR
+946775837287.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic-msa/petclinic-*
+
+# GCP Artifact Registry
+asia-northeast3-docker.pkg.dev/kdt2-final-project-t1/petclinic-msa/petclinic-*
+```
+
+### 📝 선택적 빌드
 
 | 변경 파일 | 빌드 대상 |
 |----------|----------|
 | `spring-petclinic-api-gateway/*` | api-gateway만 |
 | `spring-petclinic-customers-service/*` | customers-service만 |
-| `pom.xml` 또는 `.github/workflows/*` | 전체 서비스 |
+| `pom.xml` 또는 `.github/workflows/*` | 전체 서비스 (7개) |
 
-### GitHub Secrets 설정
+### 🔐 GitHub Secrets 설정
 
 | Secret | 용도 |
 |--------|------|
-| `AWS_ROLE_ARN` | OIDC 인증용 IAM Role |
+| `AWS_ROLE_ARN` | AWS OIDC 인증용 IAM Role |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | GCP Workload Identity Provider |
+| `GCP_SERVICE_ACCOUNT` | GCP 서비스 계정 |
 | `GITOPS_TOKEN` | petclinic-gitops 레포 접근용 PAT |
 
-### yq를 사용한 정확한 태그 수정
+### ⚙️ OIDC 인증 (키 없음)
 
-```bash
-# kustomization.yaml에서 특정 이미지 태그만 수정
-yq -i '(.images[] | select(.name == "petclinic-api-gateway")).newTag = "abc123"' kustomization.yaml
+```yaml
+# AWS OIDC
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+    aws-region: ap-northeast-2
+
+# GCP Workload Identity
+- uses: google-github-actions/auth@v2
+  with:
+    workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+    service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 ```
 
 ## 🐳 Docker 이미지
 
 ### 레이어드 빌드 (Dockerfile)
 ```dockerfile
+FROM eclipse-temurin:17-jdk-alpine AS build
+WORKDIR /app
+COPY target/*.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract
+
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-
-# 의존성 레이어 (캐싱)
-COPY --from=builder /app/target/dependencies/ ./
-COPY --from=builder /app/target/spring-boot-loader/ ./
-COPY --from=builder /app/target/snapshot-dependencies/ ./
-
-# 애플리케이션 레이어
-COPY --from=builder /app/target/application/ ./
-
+COPY --from=build /app/dependencies/ ./
+COPY --from=build /app/spring-boot-loader/ ./
+COPY --from=build /app/snapshot-dependencies/ ./
+COPY --from=build /app/application/ ./
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 ```
-
-### ECR 리포지토리
-
-| 서비스 | ECR URI |
-|--------|---------|
-| config-server | `{account}.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic-config-server` |
-| api-gateway | `{account}.dkr.ecr.ap-northeast-2.amazonaws.com/petclinic-api-gateway` |
-| ... | ... |
 
 ## 🛠️ 기술 스택
 
@@ -148,11 +168,11 @@ ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 | Framework | Spring Boot 3.x, Spring Cloud |
 | Build | Maven |
 | Container | Docker |
-| Database | MySQL 8.0 (RDS) |
+| Database | MySQL 8.0 (AWS RDS) |
 | CI/CD | GitHub Actions |
 | GitOps | ArgoCD + Kustomize |
-| YAML 처리 | yq (정확한 이미지 태그 수정) |
-| AWS 인증 | OIDC (키 없음) |
+| AWS 인증 | OIDC (IRSA) |
+| GCP 인증 | Workload Identity |
 
 ## 🔧 트러블슈팅
 
@@ -164,7 +184,6 @@ ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 
 ### Docker 빌드 시 메모리 부족
 ```bash
-# Docker 메모리 증가 또는
 MAVEN_OPTS="-Xmx512m" ./mvnw package
 ```
 
@@ -174,10 +193,16 @@ MAVEN_OPTS="-Xmx512m" ./mvnw package
 aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin {account}.dkr.ecr.ap-northeast-2.amazonaws.com
 ```
 
-## 🔗 연관 저장소
+### Artifact Registry Push 권한 오류
+```bash
+# Workload Identity 바인딩 확인
+gcloud iam service-accounts get-iam-policy github-actions@PROJECT_ID.iam.gserviceaccount.com
+```
+
+## 🔗 관련 저장소
 
 | 저장소 | 설명 |
 |--------|------|
-| **petclinic-gitops** | 애플리케이션 GitOps (Kustomize) |
-| **platform-gitops** | 플랫폼 컴포넌트 (ALB Controller, Karpenter 등) |
-| **platform-dev** | Terraform 인프라 (EKS, RDS, VPC) |
+| **petclinic-gitops** | 애플리케이션 GitOps (Kustomize, AWS/GCP overlay) |
+| **platform-gitops-test** | 플랫폼 컴포넌트 (ArgoCD, External Secrets 등) |
+| **platform-dev-test** | Terraform 인프라 (EKS, GKE, VPC) |
