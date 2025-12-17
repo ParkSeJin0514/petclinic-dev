@@ -256,15 +256,8 @@ jobs:
           echo "- **Image Tag:** ${{ steps.set-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Built Services:**${{ steps.build-images.outputs.built-services }}" >> $GITHUB_STEP_SUMMARY
 
-  # ============================================
-  # Slack 알림 - 빌드 완료 & 승인 요청
-  # ============================================
-  notify-approval-request:
-    needs: [detect-changes, docker-push]
-    if: needs.detect-changes.outputs.any-service == 'true' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Slack Notification - Approval Request
+      # [슬랙 알림] 빌드 끝났으니 승인해달라고 요청
+      - name: Notify Slack for Approval
         uses: slackapi/slack-github-action@v1.26.0
         with:
           payload: |
@@ -274,7 +267,7 @@ jobs:
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "🚀 배포 승인 요청",
+                    "text": "🚀 빌드(CI) 성공! 배포 승인이 필요합니다.",
                     "emoji": true
                   }
                 },
@@ -287,7 +280,7 @@ jobs:
                     },
                     {
                       "type": "mrkdwn",
-                      "text": "*Branch:*\n${{ github.ref_name }}"
+                      "text": "*Image Tag:*\n`${{ steps.set-tag.outputs.tag }}`"
                     }
                   ]
                 },
@@ -296,20 +289,7 @@ jobs:
                   "fields": [
                     {
                       "type": "mrkdwn",
-                      "text": "*Image Tag:*\n`${{ needs.docker-push.outputs.image-tag }}`"
-                    },
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Built Services:*\n${{ needs.docker-push.outputs.built-services }}"
-                    }
-                  ]
-                },
-                {
-                  "type": "section",
-                  "fields": [
-                    {
-                      "type": "mrkdwn",
-                      "text": "*Commit:*\n${{ github.event.head_commit.message }}"
+                      "text": "*Built Services:*\n${{ steps.build-images.outputs.built-services }}"
                     },
                     {
                       "type": "mrkdwn",
@@ -318,23 +298,13 @@ jobs:
                   ]
                 },
                 {
-                  "type": "divider"
-                },
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "⏳ *팀장 승인 대기 중*\n아래 링크에서 배포를 승인해주세요."
-                  }
-                },
-                {
                   "type": "actions",
                   "elements": [
                     {
                       "type": "button",
                       "text": {
                         "type": "plain_text",
-                        "text": "승인하러 가기",
+                        "text": "배포 승인하러 가기",
                         "emoji": true
                       },
                       "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
@@ -349,26 +319,13 @@ jobs:
           SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
 
   # ============================================
-  # 팀장 승인 대기
-  # ============================================
-  approval:
-    needs: [detect-changes, docker-push, notify-approval-request]
-    if: needs.detect-changes.outputs.any-service == 'true' && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - name: Approval Confirmed
-        run: |
-          echo "✅ 배포가 승인되었습니다!"
-          echo "승인자: ${{ github.actor }}"
-
-  # ============================================
-  # GitOps 레포 업데이트 (승인 후)
+  # GitOps 레포 업데이트 (승인 후 실행)
   # ============================================
   update-gitops:
-    needs: [detect-changes, docker-push, approval]
+    needs: [detect-changes, docker-push]
     if: needs.detect-changes.outputs.any-service == 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
+    environment: production  # 👈 [핵심] 승인 없으면 여기서 대기
     steps:
       - name: Checkout GitOps Repo
         uses: actions/checkout@v4
