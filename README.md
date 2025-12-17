@@ -119,24 +119,39 @@ Push to main
 
 1. Repository → Settings → Environments
 2. **New environment** → `production` 생성
-3. **Required reviewers** 체크 → 팀장 GitHub 계정 추가
-4. Save protection rules
+3. **Required reviewers** 체크 → 승인자 GitHub 계정 추가
+4. **Prevent self-review** 체크 (선택) → 본인이 Push한 경우 본인 승인 불가
+5. **Save protection rules** 클릭
+
+> **참고**: Prevent self-review 체크 시, Push한 사람과 다른 승인자가 필요합니다.
 
 #### GitHub Secrets 설정
 
 | Secret | 용도 |
 |--------|------|
-| `SLACK_WEBHOOK_URL` | Slack 알림용 Webhook URL |
+| `AWS_ROLE_ARN` | AWS OIDC 인증용 IAM Role |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | GCP Workload Identity Provider |
+| `GCP_SERVICE_ACCOUNT` | GCP 서비스 계정 |
+| `GITOPS_TOKEN` | petclinic-gitops 레포 접근용 PAT |
+| `SLACK_WEBHOOK_URL` | Slack 알림용 Incoming Webhook URL |
 
 #### Slack 알림 예시
 
+**승인 요청 알림:**
 ```
-🔔 배포 승인 요청
-━━━━━━━━━━━━━━━━━━━━━
-변경된 서비스: api-gateway, customers-service
-Commit: abc1234
-실행자: developer-name
-[승인하러 가기] 버튼
+🚀 빌드(CI) 성공! 배포 승인이 필요합니다.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Repository: ParkSeJin0514/petclinic-dev
+Image Tag: abc1234
+Built Services: api-gateway, customers-service
+Author: developer-name
+[배포 승인하러 가기] 버튼
+```
+
+**배포 완료 알림:**
+```
+🎉 GitOps 레포 업데이트 완료! ArgoCD가 자동으로 배포합니다.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 ### 🐳 이미지 레지스트리
@@ -161,16 +176,6 @@ asia-northeast3-docker.pkg.dev/kdt2-final-project-t1/petclinic-msa/petclinic-*
 | `spring-petclinic-api-gateway/*` | api-gateway만 |
 | `spring-petclinic-customers-service/*` | customers-service만 |
 | `pom.xml` 또는 `.github/workflows/*` | 전체 서비스 (7개) |
-
-### 🔐 GitHub Secrets 설정
-
-| Secret | 용도 |
-|--------|------|
-| `AWS_ROLE_ARN` | AWS OIDC 인증용 IAM Role |
-| `GCP_WORKLOAD_IDENTITY_PROVIDER` | GCP Workload Identity Provider |
-| `GCP_SERVICE_ACCOUNT` | GCP 서비스 계정 |
-| `GITOPS_TOKEN` | petclinic-gitops 레포 접근용 PAT |
-| `SLACK_WEBHOOK_URL` | Slack 알림용 Incoming Webhook URL |
 
 ### ⚙️ OIDC 인증 (키 없음)
 
