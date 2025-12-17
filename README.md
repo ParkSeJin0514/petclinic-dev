@@ -82,16 +82,61 @@ Push to main
 │    ├── AWS ECR Push (ap-northeast-2)                       │
 │    └── GCP Artifact Registry Push (asia-northeast3)        │
 ├─────────────────────────────────────────────────────────────┤
-│ 4. GitOps 업데이트                                          │
+│ 4. 🔔 Slack 알림 - 승인 요청                                │
+│    └── 팀장에게 배포 승인 요청 알림 전송                    │
+├─────────────────────────────────────────────────────────────┤
+│ 5. ✅ 팀장 승인 (GitHub Environment)                        │
+│    └── production 환경의 Required Reviewer 승인 대기       │
+├─────────────────────────────────────────────────────────────┤
+│ 6. GitOps 업데이트                                          │
 │    ├── petclinic-gitops 클론                               │
 │    ├── overlays/aws/kustomization.yaml 태그 수정           │
 │    ├── overlays/gcp/kustomization.yaml 태그 수정           │
 │    └── Commit & Push                                        │
 ├─────────────────────────────────────────────────────────────┤
-│ 5. ArgoCD 자동 배포                                         │
+│ 7. 🔔 Slack 알림 - 배포 완료                                │
+│    └── 배포 완료 알림 전송                                  │
+├─────────────────────────────────────────────────────────────┤
+│ 8. ArgoCD 자동 배포                                         │
 │    ├── AWS EKS 배포 (Primary)                              │
 │    └── GCP GKE 배포 (DR)                                   │
 └─────────────────────────────────────────────────────────────┘
+```
+
+### 🔔 Slack 알림 + 승인 프로세스
+
+배포 전 팀장 승인이 필요한 워크플로우가 적용되어 있습니다.
+
+#### 워크플로우 흐름
+
+1. **코드 Push** → 빌드 및 Docker 이미지 생성
+2. **Slack 알림** → 팀장에게 승인 요청 알림
+3. **승인 대기** → GitHub Actions에서 승인 버튼 클릭 대기
+4. **승인 완료** → GitOps 업데이트 및 ArgoCD 배포
+5. **완료 알림** → Slack으로 배포 완료 알림
+
+#### GitHub Environment 설정 (필수)
+
+1. Repository → Settings → Environments
+2. **New environment** → `production` 생성
+3. **Required reviewers** 체크 → 팀장 GitHub 계정 추가
+4. Save protection rules
+
+#### GitHub Secrets 설정
+
+| Secret | 용도 |
+|--------|------|
+| `SLACK_WEBHOOK_URL` | Slack 알림용 Webhook URL |
+
+#### Slack 알림 예시
+
+```
+🔔 배포 승인 요청
+━━━━━━━━━━━━━━━━━━━━━
+변경된 서비스: api-gateway, customers-service
+Commit: abc1234
+실행자: developer-name
+[승인하러 가기] 버튼
 ```
 
 ### 🐳 이미지 레지스트리
@@ -125,6 +170,7 @@ asia-northeast3-docker.pkg.dev/kdt2-final-project-t1/petclinic-msa/petclinic-*
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | GCP Workload Identity Provider |
 | `GCP_SERVICE_ACCOUNT` | GCP 서비스 계정 |
 | `GITOPS_TOKEN` | petclinic-gitops 레포 접근용 PAT |
+| `SLACK_WEBHOOK_URL` | Slack 알림용 Incoming Webhook URL |
 
 ### ⚙️ OIDC 인증 (키 없음)
 
