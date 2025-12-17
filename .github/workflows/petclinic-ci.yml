@@ -16,6 +16,8 @@ env:
   GCP_REGION: asia-northeast3
   GAR_REGISTRY: asia-northeast3-docker.pkg.dev
   GAR_REPO: petclinic-msa
+  # Slack
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
 permissions:
   id-token: write   # OIDC 토큰 발급
@@ -255,10 +257,116 @@ jobs:
           echo "- **Built Services:**${{ steps.build-images.outputs.built-services }}" >> $GITHUB_STEP_SUMMARY
 
   # ============================================
-  # GitOps 레포 업데이트
+  # Slack 알림 - 빌드 완료 & 승인 요청
+  # ============================================
+  notify-approval-request:
+    needs: [detect-changes, docker-push]
+    if: needs.detect-changes.outputs.any-service == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack Notification - Approval Request
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "🚀 배포 승인 요청",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:*\n${{ github.ref_name }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Image Tag:*\n`${{ needs.docker-push.outputs.image-tag }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Built Services:*\n${{ needs.docker-push.outputs.built-services }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n${{ github.event.head_commit.message }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Author:*\n${{ github.actor }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "divider"
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "⏳ *팀장 승인 대기 중*\n아래 링크에서 배포를 승인해주세요."
+                  }
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {
+                        "type": "plain_text",
+                        "text": "승인하러 가기",
+                        "emoji": true
+                      },
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                      "style": "primary"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+
+  # ============================================
+  # 팀장 승인 대기
+  # ============================================
+  approval:
+    needs: [detect-changes, docker-push, notify-approval-request]
+    if: needs.detect-changes.outputs.any-service == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Approval Confirmed
+        run: |
+          echo "✅ 배포가 승인되었습니다!"
+          echo "승인자: ${{ github.actor }}"
+
+  # ============================================
+  # GitOps 레포 업데이트 (승인 후)
   # ============================================
   update-gitops:
-    needs: [detect-changes, docker-push]
+    needs: [detect-changes, docker-push, approval]
     if: needs.detect-changes.outputs.any-service == 'true' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
@@ -324,7 +432,7 @@ jobs:
           cd gitops
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
-          
+
           git add .
           if git diff --cached --quiet; then
             echo "No changes to commit"
@@ -340,3 +448,66 @@ jobs:
           echo "- **Image Tag:** ${{ needs.docker-push.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Updated Services:** ${{ needs.docker-push.outputs.built-services }}" >> $GITHUB_STEP_SUMMARY
           echo "- **ArgoCD가 자동으로 EKS에 배포합니다**" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================
+  # Slack 알림 - 배포 완료
+  # ============================================
+  notify-deploy-complete:
+    needs: [detect-changes, docker-push, update-gitops]
+    if: needs.detect-changes.outputs.any-service == 'true' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Slack Notification - Deploy Complete
+        uses: slackapi/slack-github-action@v1.26.0
+        with:
+          payload: |
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "✅ 배포 완료",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Repository:*\n${{ github.repository }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Image Tag:*\n`${{ needs.docker-push.outputs.image-tag }}`"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Built Services:*\n${{ needs.docker-push.outputs.built-services }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Status:*\nArgoCD 자동 배포 중"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "🎉 GitOps 레포 업데이트 완료! ArgoCD가 자동으로 배포합니다."
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
