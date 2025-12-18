@@ -255,5 +255,5 @@ gcloud iam service-accounts get-iam-policy github-actions@PROJECT_ID.iam.gservic
 | 저장소 | 설명 |
 |--------|------|
 | **petclinic-gitops** | 애플리케이션 GitOps (Kustomize, AWS/GCP overlay) |
-| **platform-gitops-test** | 플랫폼 컴포넌트 (ArgoCD, External Secrets 등) |
-| **platform-dev-test** | Terraform 인프라 (EKS, GKE, VPC) |
+| **platform-gitops-last** | 플랫폼 컴포넌트 (ArgoCD, External Secrets 등) |
+| **platform-dev-last** | Terraform 인프라 (EKS, GKE, VPC) |
