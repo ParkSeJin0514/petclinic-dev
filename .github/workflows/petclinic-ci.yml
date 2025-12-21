@@ -404,7 +404,7 @@ jobs:
           echo "### 📝 GitOps 업데이트" >> $GITHUB_STEP_SUMMARY
           echo "- **Image Tag:** ${{ needs.docker-push.outputs.image-tag }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Updated Services:** ${{ needs.docker-push.outputs.built-services }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **ArgoCD가 자동으로 EKS에 배포합니다**" >> $GITHUB_STEP_SUMMARY
+          echo "- **ArgoCD가 자동으로 Kubernetes에 배포합니다**" >> $GITHUB_STEP_SUMMARY
 
   # ============================================
   # Slack 알림 - 배포 완료
