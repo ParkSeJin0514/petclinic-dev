@@ -42,14 +42,7 @@ spring:
             - StripPrefix=2
             - CircuitBreaker=name=genaiCircuitBreaker,fallbackUri=/fallback
 
----
-spring:
-  config:
-    activate:
-      on-profile: docker
-    import: configserver:http://config-server:8888
-
-# Prometheus Actuator 설정
+# Prometheus Actuator 설정 (모든 프로파일에서 활성화)
 management:
   endpoints:
     web:
@@ -59,3 +52,10 @@ management:
     export:
       prometheus:
         enabled: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: docker
+    import: configserver:http://config-server:8888
