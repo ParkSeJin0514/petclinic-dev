@@ -19,6 +19,8 @@ management:
       exposure:
         include: health,info,prometheus,metrics
   metrics:
+    tags:
+      application: petclinic
     export:
       prometheus:
         enabled: true
