@@ -41,13 +41,34 @@ Spring PetClinic Microservices 소스 코드 및 Multi-Cloud CI/CD 파이프라�
 ## 📁 디렉토리 구조
 
 ```
-├── .github/workflows/
-│   └── petclinic-ci.yml      # Multi-Cloud CI/CD 파이프라인
-├── spring-petclinic-*/       # 각 마이크로서비스 소스
-├── docker/                   # Dockerfile들
-├── scripts/                  # 빌드/배포 스크립트
-├── docker-compose.yml        # 로컬 개발용
-└── pom.xml                   # Maven 루트 설정
+petclinic-dev/
+├── .github/
+│   └── workflows/
+│       └── petclinic-ci.yml          # Multi-Cloud CI/CD 파이프라인
+├── spring-petclinic-admin-server/    # Spring Boot Admin (포트 9090)
+├── spring-petclinic-api-gateway/     # API Gateway (포트 8080)
+├── spring-petclinic-config-server/   # 중앙 설정 서버 (포트 8888)
+├── spring-petclinic-customers-service/  # 고객/펫 관리 (포트 8081)
+├── spring-petclinic-discovery-server/   # Eureka 서비스 디스커버리 (포트 8761)
+├── spring-petclinic-genai-service/   # GenAI 서비스
+├── spring-petclinic-vets-service/    # 수의사 정보 (포트 8083)
+├── spring-petclinic-visits-service/  # 방문 기록 (포트 8082)
+├── docker/
+│   ├── Dockerfile                    # 공통 Docker 이미지 빌드
+│   ├── grafana/                      # Grafana 대시보드 설정
+│   │   ├── dashboards/               # JVM, HTTP 대시보드
+│   │   ├── provisioning/             # 데이터소스 프로비저닝
+│   │   └── grafana.ini               # Grafana 설정
+│   └── prometheus/
+│       └── prometheus.yml            # Prometheus 스크랩 설정
+├── scripts/
+│   ├── chaos/                        # Chaos Engineering 스크립트
+│   ├── pushImages.sh                 # 이미지 푸시
+│   ├── tagImages.sh                  # 이미지 태깅
+│   └── run_all.sh                    # 전체 서비스 실행
+├── docs/                             # 문서
+├── docker-compose.yml                # 로컬 개발용
+└── pom.xml                           # Maven 루트 설정
 ```
 
 ## 🚀 로컬 실행
@@ -211,6 +232,55 @@ COPY --from=build /app/application/ ./
 ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 ```
 
+## 📊 모니터링 (Prometheus + Grafana)
+
+### Actuator & Micrometer 설정
+
+모든 서비스에 Prometheus 메트릭 엔드포인트가 활성화되어 있습니다.
+
+```yaml
+# application.yml (모든 서비스 공통)
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: petclinic    # 모든 메트릭에 application 레이블 추가
+    export:
+      prometheus:
+        enabled: true
+```
+
+### 메트릭 엔드포인트
+
+| 서비스 | Prometheus 엔드포인트 |
+|--------|----------------------|
+| config-server | http://config-server:8888/actuator/prometheus |
+| discovery-server | http://discovery-server:8761/actuator/prometheus |
+| api-gateway | http://api-gateway:8080/actuator/prometheus |
+| customers-service | http://customers-service:8081/actuator/prometheus |
+| visits-service | http://visits-service:8082/actuator/prometheus |
+| vets-service | http://vets-service:8083/actuator/prometheus |
+| admin-server | http://admin-server:9090/actuator/prometheus |
+
+### Grafana 대시보드
+
+- **JVM (Micrometer)**: Heap/Non-Heap 메모리, GC, 스레드 모니터링
+- **HTTP 요청**: 요청률, 에러율, 응답 시간
+
+### Prometheus 설정 (docker/prometheus/prometheus.yml)
+
+```yaml
+scrape_configs:
+  - job_name: 'customers-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['customers-service:8081']
+  # ... 다른 서비스들
+```
+
 ## 🛠️ 기술 스택
 
 | 분류 | 기술 |
@@ -222,6 +292,7 @@ ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
 | Database | MySQL 8.0 (AWS RDS) |
 | CI/CD | GitHub Actions |
 | GitOps | ArgoCD + Kustomize |
+| Monitoring | Prometheus + Grafana + Micrometer |
 | AWS 인증 | OIDC (IRSA) |
 | GCP 인증 | Workload Identity |
 
