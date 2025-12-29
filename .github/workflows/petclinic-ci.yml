@@ -3,6 +3,8 @@ name: Petclinic CI/CD
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*'  # v1.0.0, v2.0.0 등 태그 푸시 시 트리거
   pull_request:
     branches: [main]
 
@@ -185,23 +187,24 @@ jobs:
           GCP_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
           GAR_REGISTRY: ${{ env.GAR_REGISTRY }}
           GAR_REPO: ${{ env.GAR_REPO }}
+          IS_TAGGED_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
           BUILT_SERVICES=""
-          
+
           build_and_push() {
             local service=$1
             local port=$2
             local build_flag=$3
-            
+
             if [ "$build_flag" != "true" ]; then
               echo "⏭️ Skipping $service (변경 없음)"
               return
             fi
-            
+
             echo "🐳 Building $service..."
-            
+
             cd spring-petclinic-$service
-            
+
             cat > Dockerfile << 'EOF'
           FROM eclipse-temurin:17-jdk-alpine AS build
           WORKDIR /app
@@ -217,29 +220,35 @@ jobs:
           EXPOSE $port
           ENTRYPOINT ["java", "org.springframework.boot.loader.launch.JarLauncher"]
           EOF
-            
+
             # AWS ECR
             ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPO_PREFIX}/petclinic-$service"
             # GCP Artifact Registry
             GAR_IMAGE="${GAR_REGISTRY}/${GCP_PROJECT_ID}/${GAR_REPO}/petclinic-$service"
 
+            # 빌드 (AWS + GCP 태그 모두 생성)
             docker build -t $ECR_IMAGE:$IMAGE_TAG -t $ECR_IMAGE:latest \
                          -t $GAR_IMAGE:$IMAGE_TAG -t $GAR_IMAGE:latest .
 
-            # Push to AWS ECR
+            # AWS ECR: 항상 푸시 (모든 커밋)
             docker push $ECR_IMAGE:$IMAGE_TAG
             docker push $ECR_IMAGE:latest
+            echo "✅ $service → AWS ECR 완료"
 
-            # Push to GCP Artifact Registry
-            docker push $GAR_IMAGE:$IMAGE_TAG
-            docker push $GAR_IMAGE:latest
+            # GCP Artifact Registry: 태그된 릴리스만 푸시 (v*.*.*)
+            if [ "$IS_TAGGED_RELEASE" = "true" ]; then
+              docker push $GAR_IMAGE:$IMAGE_TAG
+              docker push $GAR_IMAGE:latest
+              echo "✅ $service → GCP Artifact Registry 완료 (릴리스: ${GITHUB_REF#refs/tags/})"
+            else
+              echo "⏭️ $service → GCP 스킵 (태그 없음, main 브랜치 커밋)"
+            fi
 
-            echo "✅ $service 완료 (ECR + GAR)"
             BUILT_SERVICES="$BUILT_SERVICES $service"
-            
+
             cd ..
           }
-          
+
           build_and_push "config-server" "8888" "$BUILD_CONFIG_SERVER"
           build_and_push "discovery-server" "8761" "$BUILD_DISCOVERY_SERVER"
           build_and_push "customers-service" "8081" "$BUILD_CUSTOMERS_SERVICE"
@@ -247,14 +256,21 @@ jobs:
           build_and_push "visits-service" "8082" "$BUILD_VISITS_SERVICE"
           build_and_push "api-gateway" "8080" "$BUILD_API_GATEWAY"
           build_and_push "admin-server" "9090" "$BUILD_ADMIN_SERVER"
-          
+
           echo "built-services=$BUILT_SERVICES" >> $GITHUB_OUTPUT
+          echo "is-tagged-release=$IS_TAGGED_RELEASE" >> $GITHUB_OUTPUT
 
       - name: Summary
         run: |
           echo "### 🐳 Docker Push 결과" >> $GITHUB_STEP_SUMMARY
           echo "- **Image Tag:** ${{ steps.set-tag.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
           echo "- **Built Services:**${{ steps.build-images.outputs.built-services }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **AWS ECR:** ✅ 푸시 완료" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.build-images.outputs.is-tagged-release }}" = "true" ]; then
+            echo "- **GCP Artifact Registry:** ✅ 푸시 완료 (릴리스 태그)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **GCP Artifact Registry:** ⏭️ 스킵 (태그 없음)" >> $GITHUB_STEP_SUMMARY
+          fi
 
       # [슬랙 알림] 빌드 끝났으니 승인해달라고 요청
       - name: Notify Slack for Approval
