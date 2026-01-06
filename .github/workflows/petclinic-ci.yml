@@ -2,8 +2,9 @@ name: Petclinic CI/CD
 
 on:
   push:
+    branches: [main]  # 개발 환경: main 브랜치 push 시 CI/CD 실행
     tags:
-      - 'v*'  # v1.0.0, v2.0.0 등 태그 푸시 시에만 CI/CD 실행
+      - 'v*'  # 운영 환경: v1.0.0, v2.0.0 등 태그 푸시 시 CI/CD 실행
   pull_request:
     branches: [main]  # PR은 테스트용으로 유지
 
